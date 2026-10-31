@@ -316,6 +316,27 @@ final class DumperTest extends TestCase
         self::assertSame('"k\a": "v\x9F"', $output);
     }
 
+    public function testDumpDocument_PlainScalarStartingWithAnIndicatorBeforeAnotherCharacter_StaysPlain(): void
+    {
+        $document = new Document(
+            new SequenceNode(new NodeList(
+                new ScalarNode('-7'),
+                new ScalarNode('-0.0'),
+                new ScalarNode('-x'),
+                new ScalarNode('?a'),
+                new ScalarNode(':a'),
+                new ScalarNode('- x'),
+                new ScalarNode('-'),
+                new ScalarNode('? a'),
+                new ScalarNode(':'),
+            )),
+        );
+
+        $output = (new Dumper)->dumpDocument($document);
+
+        self::assertSame("- -7\n- -0.0\n- -x\n- ?a\n- :a\n- '- x'\n- '-'\n- '? a'\n- ':'", $output);
+    }
+
     public function testDumpDocument_PlainScalarsNeedingQuotes_WrapsInSingleQuotes(): void
     {
         $document = new Document(
