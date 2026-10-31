@@ -23,6 +23,9 @@ tags `v<upstream version>-p<n>`, and do not assume that upstream accepts the fix
   upstream wrote the characters U+0080 to U+009F as the escape of their first UTF-8 byte, left a
   byte order mark and the characters above U+00A0 raw, and wrote a plain or single-quoted scalar
   that holds such a character, which no reader accepts.
+- The dumper writes a plain scalar that starts with `-`, `?` or `:` plain when a character other
+  than a space follows (YAML 1.2.2, 7.3.3, ns-plain-first), so `-7` and `-0.0` stay numbers;
+  upstream single-quoted every such scalar, which a reader takes as a string.
 
-Released as `v1.0.0-p1`, on top of upstream 1.0.0, and `v1.0.0-p2`, which adds the explicit key
-and the dumper escapes.
+Released as `v1.0.0-p1`, on top of upstream 1.0.0; `v1.0.0-p2` adds the explicit key and the
+dumper escapes, and `v1.0.0-p3` the plain scalars after an indicator.
