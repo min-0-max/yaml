@@ -1993,12 +1993,92 @@ final class ParserTest extends TestCase
         (new Parser)->parse("value: |x\n  text");
     }
 
-    public function testParse_ExplicitMappingKey_ThrowsParseException(): void
+    public function testParse_ExplicitMappingKey_ReturnsTheEntry(): void
     {
-        $this->expectException(ParseException::class);
-        $this->expectExceptionMessage('Explicit mapping keys');
+        $document = (new Parser)->parse("? complex\n: value")->findFirst();
 
-        (new Parser)->parse("? complex\n: value");
+        self::assertEquals(
+            new MappingNode(
+                entries: new MappingEntryList(
+                    new MappingEntry(
+                        key: new ScalarNode(value: 'complex', line: 1),
+                        value: new ScalarNode(value: 'value', line: 2),
+                    ),
+                ),
+                line: 1,
+            ),
+            $document?->getRoot(),
+        );
+    }
+
+    public function testParse_ExplicitQuotedKey_ReadsItsEscapes(): void
+    {
+        $document = (new Parser)->parse("? \"a\\u2028b\"\n: 1\nc: 2")->findFirst();
+
+        self::assertEquals(
+            new MappingNode(
+                entries: new MappingEntryList(
+                    new MappingEntry(
+                        key: new ScalarNode(value: "a\u{2028}b", style: ScalarStyle::DoubleQuoted, line: 1),
+                        value: new ScalarNode(value: '1', line: 2),
+                    ),
+                    new MappingEntry(
+                        key: new ScalarNode(value: 'c', line: 3),
+                        value: new ScalarNode(value: '2', line: 3),
+                    ),
+                ),
+                line: 1,
+            ),
+            $document?->getRoot(),
+        );
+    }
+
+    public function testParse_ExplicitKeyWithoutAValue_HasANullValue(): void
+    {
+        $document = (new Parser)->parse("outer:\n  ? lone\n  next: 1")->findFirst();
+
+        self::assertEquals(
+            new MappingNode(
+                entries: new MappingEntryList(
+                    new MappingEntry(
+                        key: new ScalarNode(value: 'outer', line: 1),
+                        value: new MappingNode(
+                            entries: new MappingEntryList(
+                                new MappingEntry(
+                                    key: new ScalarNode(value: 'lone', line: 2),
+                                    value: ScalarNode::null(2),
+                                ),
+                                new MappingEntry(
+                                    key: new ScalarNode(value: 'next', line: 3),
+                                    value: new ScalarNode(value: '1', line: 3),
+                                ),
+                            ),
+                            line: 2,
+                        ),
+                    ),
+                ),
+                line: 1,
+            ),
+            $document?->getRoot(),
+        );
+    }
+
+    public function testParse_ExplicitKeyWithABlockValue_ReadsTheBlockBelowTheColon(): void
+    {
+        $document = (new Parser)->parse("? k\n:\n  - 1")->findFirst();
+
+        self::assertEquals(
+            new MappingNode(
+                entries: new MappingEntryList(
+                    new MappingEntry(
+                        key: new ScalarNode(value: 'k', line: 1),
+                        value: new SequenceNode(items: new NodeList(new ScalarNode(value: '1', line: 3)), line: 3),
+                    ),
+                ),
+                line: 1,
+            ),
+            $document?->getRoot(),
+        );
     }
 
     public function testParse_AnchorWithoutAName_ThrowsParseException(): void

@@ -113,9 +113,9 @@ final class Parser
             return $this->parseBlockNode($reader, $anchors, $indent, $header);
         }
 
-        $this->assertNoExplicitKey($rest, $line);
-
-        $opensCollection = $this->isSequenceItem($rest) || null !== MappingKey::fromText($this->textHelper, $rest);
+        $opensCollection = $this->isSequenceItem($rest)
+            || $this->isExplicitKey($rest)
+            || null !== MappingKey::fromText($this->textHelper, $rest);
 
         if ($opensCollection && !$own->isEmpty()) {
             $reader->next();
@@ -194,7 +194,13 @@ final class Parser
                 break;
             }
 
-            $this->assertNoExplicitKey($text, $line);
+            if ($this->isExplicitKey($text)) {
+                $startLine = 0 === $startLine ? $line->getNumber() : $startLine;
+                $entries[] = $this->parseExplicitEntry($reader, $anchors, $indent, $line, $text);
+
+                continue;
+            }
+
             $key = MappingKey::fromText($this->textHelper, $text);
 
             if (null === $key) {
@@ -348,11 +354,41 @@ final class Parser
         return '-' === ($text[0] ?? '') && ('' === substr($text, 1) || ' ' === $text[1]);
     }
 
-    private function assertNoExplicitKey(string $text, Line $line): void
+    private function isExplicitKey(string $text): bool
     {
-        if ('?' === $text || str_starts_with($text, '? ')) {
-            throw new ParseException('Explicit mapping keys ("? ") are not supported', $line->getNumber(), $text);
+        return '?' === $text || str_starts_with($text, '? ');
+    }
+
+    /**
+     * Parses an entry with an explicit key (YAML 1.2.2, 8.2.2): the key follows "? " on its line or is the block node
+     * below it, and the value follows ": " on the next line of the mapping's indentation, or is the block node below a
+     * lone ":". An entry without a ":" line has a null value.
+     */
+    private function parseExplicitEntry(LineReader $reader, AnchorRegistry $anchors, int $indent, Line $line, string $text): MappingEntry
+    {
+        $reader->next();
+        $keyText = ltrim(substr($text, 1));
+        $key = '' === $keyText
+            ? $this->parseBlockNode($reader, $anchors, $indent + 1)
+            : $this->parseValueText($reader, $anchors, $keyText, $line, $indent + 1);
+
+        $reader->skipIgnorable();
+        $next = $reader->peek();
+        $valueText = null !== $next && !$next->isDocumentBoundary() && $next->getIndent() === $indent
+            ? $this->textHelper->stripComment($next->getText())
+            : null;
+
+        if (null === $valueText || (':' !== $valueText && !str_starts_with($valueText, ': '))) {
+            return new MappingEntry($key, $anchors->keep(ScalarNode::null($line->getNumber())));
         }
+
+        $reader->next();
+        $rest = ltrim(substr($valueText, 1));
+        $value = '' === $rest
+            ? $this->parseBlockValue($reader, $anchors, $indent)
+            : $this->parseValueText($reader, $anchors, $rest, $next, $indent + 1);
+
+        return new MappingEntry($key, $value);
     }
 
     private function assertSupportedVersion(Line $line): void
