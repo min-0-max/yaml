@@ -372,7 +372,8 @@ final class Dumper
             return true;
         }
 
-        if (preg_match('/^[-?:,\[\]{}#&*!|>\'"%@`]/', $value)) {
+        // "-", "?" and ":" start a plain scalar unless a space or the end follows them (YAML 1.2.2, 7.3.3, ns-plain-first).
+        if (preg_match('/^(?:[,\[\]{}#&*!|>\'"%@`]|[-?:](?:\s|$))/', $value)) {
             return true;
         }
 
