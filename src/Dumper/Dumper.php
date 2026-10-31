@@ -26,6 +26,9 @@ final class Dumper
 {
     private const int INDENT_SIZE = 2;
 
+    /** A character outside c-printable (YAML 1.2.2, 5.1), or a byte order mark. */
+    private const string NOT_PRINTABLE = '/[^\t\n\r\x{20}-\x{7E}\x{85}\x{A0}-\x{D7FF}\x{E000}-\x{FEFE}\x{FF00}-\x{FFFD}\x{10000}-\x{10FFFF}]/u';
+
     public function dumpDocuments(DocumentList $documents): string
     {
         $parts = [];
@@ -70,6 +73,11 @@ final class Dumper
 
     private function dumpScalarContent(ScalarNode $node, int $indent, bool $inFlow): string
     {
+        // A character outside c-printable can be written only as an escape, which only a double-quoted scalar has.
+        if ($this->needsEscape($node->getValue())) {
+            return '"'.$this->escapeDoubleQuoted($node->getValue()).'"';
+        }
+
         return match ($node->getStyle()) {
             ScalarStyle::Plain => $this->dumpPlainScalar($node->getValue(), false, $inFlow),
             ScalarStyle::SingleQuoted => "'".$this->escapeSingleQuoted($node->getValue())."'",
@@ -85,11 +93,24 @@ final class Dumper
             return '';
         }
 
+        if ($this->needsEscape($value)) {
+            return '"'.$this->escapeDoubleQuoted($value).'"';
+        }
+
         if ($this->needsQuotes($value, $isKey, $inFlow)) {
             return "'".$this->escapeSingleQuoted($value)."'";
         }
 
         return $value;
+    }
+
+    /**
+     * Whether the value holds a character outside c-printable (YAML 1.2.2, 5.1) or a byte order mark, which a stream holds
+     * only as its first character (5.2).
+     */
+    private function needsEscape(string $value): bool
+    {
+        return 1 === preg_match(self::NOT_PRINTABLE, $value);
     }
 
     private function dumpBlockScalar(string $value, string $indicator, int $indent): string
@@ -374,7 +395,7 @@ final class Dumper
     private function escapeDoubleQuoted(string $value): string
     {
         return preg_replace_callback(
-            '/[\x00-\x1F\x7F"\\\]|(?:\xC2[\x80-\xA0])|(?:\xE2\x80[\xA8\xA9])|(?:\xC2\x85)/',
+            '/[\t\n\r"\\\\\x{85}\x{A0}\x{2028}\x{2029}]|'.substr(self::NOT_PRINTABLE, 1, -2).'/u',
             static function (array $matches): string {
                 $character = $matches[0];
 
@@ -390,15 +411,25 @@ final class Dumper
                     "\x1B" => '\e',
                     '"' => '\"',
                     '\\' => '\\\\',
-                    "\xC2\x85" => '\N',
-                    "\xC2\xA0" => '\_',
-                    "\xE2\x80\xA8" => '\L',
-                    "\xE2\x80\xA9" => '\P',
-                    default => sprintf('\x%02X', ord($character)),
+                    "\u{85}" => '\N',
+                    "\u{A0}" => '\_',
+                    "\u{2028}" => '\L',
+                    "\u{2029}" => '\P',
+                    default => self::escapeCodePoint(mb_ord($character, 'UTF-8')),
                 };
             },
             $value,
         ) ?? $value;
+    }
+
+    /** The escape of a code point: \x for one byte, \u for the Basic Multilingual Plane and \U above it. */
+    private static function escapeCodePoint(int $point): string
+    {
+        return match (true) {
+            $point <= 0xFF => sprintf('\x%02X', $point),
+            $point <= 0xFFFF => sprintf('\u%04X', $point),
+            default => sprintf('\U%08X', $point),
+        };
     }
 
     private function spaces(int $indent): string

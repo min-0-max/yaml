@@ -289,6 +289,33 @@ final class DumperTest extends TestCase
         );
     }
 
+    public function testDumpDocument_DoubleQuotedScalar_EscapesEachNonPrintableCharacterByItsCodePoint(): void
+    {
+        $document = new Document(
+            new ScalarNode("a\x7F\u{80}\u{9F}\u{FEFF}\u{FFFE}b", ScalarStyle::DoubleQuoted),
+        );
+
+        $output = (new Dumper)->dumpDocument($document);
+
+        self::assertSame('"a\x7F\x80\x9F\uFEFF\uFFFEb"', $output);
+    }
+
+    public function testDumpDocument_NonPrintableCharacterInAnotherStyle_WritesTheScalarDoubleQuoted(): void
+    {
+        $document = new Document(
+            new MappingNode(new MappingEntryList(
+                new MappingEntry(
+                    new ScalarNode("k\x07", ScalarStyle::Plain),
+                    new ScalarNode("v\u{9F}", ScalarStyle::SingleQuoted),
+                ),
+            )),
+        );
+
+        $output = (new Dumper)->dumpDocument($document);
+
+        self::assertSame('"k\a": "v\x9F"', $output);
+    }
+
     public function testDumpDocument_PlainScalarsNeedingQuotes_WrapsInSingleQuotes(): void
     {
         $document = new Document(
